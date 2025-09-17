@@ -6,7 +6,7 @@ import pandas as pd
 from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QFormLayout, QRadioButton, QPushButton, QLineEdit, QFileDialog, QLabel, QComboBox, QTextEdit, QHBoxLayout)
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QIcon
-from Import_Formatter_Functions import ParseExcel
+from Import_Formatter_Functions import KeywordParseExcel, DefaultParseExcel
 from PermanentHeader import permanent_header
 from NextButton import NextButton
 import io
@@ -19,7 +19,7 @@ class ImportFormatterGUI(QWidget):
         screen = QApplication.primaryScreen()
         screen_geometry = screen.geometry()
         window_width = 800
-        window_height = 200
+        window_height = 100
         x = (screen_geometry.width() - window_width) // 2
         y = (screen_geometry.height() - window_height) // 2
         self.setGeometry(x, y, window_width, window_height)
@@ -120,10 +120,24 @@ class ImportFormatterGUI(QWidget):
         self.column_combo.addItems(column_names)
         layout.addRow("Select Column:", self.column_combo)
 
-        # Add text input for user to input word to parse with
+        # Create Parsing Selection Radio Buttons
+        self.keyword = QRadioButton("Keyword")
+        self.standard = QRadioButton("Default Formats")
+        self.standard.setChecked(True)
+        radio_container = QWidget()
+        radio_layout = QHBoxLayout(radio_container)
+        radio_layout.setContentsMargins(0, 0, 0, 0)
+        radio_layout.addWidget(self.standard)
+        radio_layout.addWidget(self.keyword)
+        radio_layout.addStretch() 
+        layout.addRow("Select Parsing Method:", radio_container)
+
+        self.keyword_label = QLabel("Enter Keyword:")
         self.word_input = QLineEdit()
         self.word_input.setPlaceholderText("This is NOT case sensitive.")
-        layout.addRow("Enter Keyword:", self.word_input)
+        layout.addRow(self.keyword_label, self.word_input)
+        self.keyword.toggled.connect(self._toggle_keyword_widgets)
+        self._toggle_keyword_widgets()
         
         self.submit_button = NextButton("Submit", True)
 
@@ -137,6 +151,15 @@ class ImportFormatterGUI(QWidget):
         self.dynamic_content_layout.addWidget(self.output_text_box)
 
         self.submit_button.clicked.connect(self.on_submit)
+
+    def _toggle_keyword_widgets(self):
+        """
+        Shows or hides the keyword input widgets based on which
+        radio button is selected.
+        """
+        is_visible = self.keyword.isChecked()
+        self.keyword_label.setVisible(is_visible)
+        self.word_input.setVisible(is_visible)
 
     def handle_error(self, message):
         """
@@ -163,9 +186,12 @@ class ImportFormatterGUI(QWidget):
             # Get the keyword from the QLineEdit
             keyword = self.word_input.text()
 
-            # Call the ParseExcel function with the collected values
-            ParseExcel(self.file_path, keyword, selected_column)
-            
+            if self.keyword.isChecked():
+                # Call the ParseExcel function with the collected values
+                KeywordParseExcel(self.file_path, keyword, selected_column)
+            else:
+                DefaultParseExcel(self.file_path, selected_column)
+
         finally:
             # Restore stdout to its original state
             sys.stdout = sys.__stdout__

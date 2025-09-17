@@ -2,7 +2,97 @@ import pandas as pd
 import re
 import os
 
-def ParseExcel(file_path: str, keyword: str, column_name: str):
+def DefaultParseExcel(file_path: str, column_name: str):
+    """
+    Reads an Excel file, parses a specified column, and saves the result to a new file.
+    Handles complex cases including preambles, numbered lists, and multi-row 'GIVEN' blocks.
+    """
+    try:
+        df = pd.read_excel(file_path)
+        file_name, file_ext = os.path.splitext(file_path)
+    except FileNotFoundError:
+        print(f"Error: The file at {file_path} was not found.")
+        return
+
+    try:
+        id_column = df.columns[0]
+        if column_name not in df.columns:
+            print(f"Error: Column '{column_name}' not found in the Excel file.")
+            return
+
+        processed_rows = []
+
+        for _, row in df.iterrows():
+            original_id = row[id_column]
+            # Ensure we're working with a string to avoid errors
+            criteria_text = str(row[column_name]) if pd.notna(row[column_name]) else ""
+
+            if not criteria_text:
+                continue
+
+            other_cols = row.drop([id_column, column_name]).to_dict()
+            
+            scenarios = re.split(r'(?=\d+\.\s*Scenario:|Scenario:)', criteria_text)
+            
+            # --- CORRECTED PREAMBLE LOGIC ---
+            # Only treat the first block as a preamble if it lacks a "Scenario:" AND
+            # there are other blocks that DO have one. This prevents it from
+            # incorrectly consuming the entire ID-7 block.
+            if len(scenarios) > 1 and 'Scenario:' not in scenarios[0]:
+                preamble = scenarios.pop(0).strip()
+                if preamble: # Only append if there's actual text
+                    scenarios[0] = scenarios[0] + '\n' + preamble
+            
+            for block in scenarios:
+                block = block.strip()
+                if not block:
+                    continue
+
+                # --- Logic for cases with no "Scenario:" line (ID-7) ---
+                if 'Scenario:' not in block:
+                    given_blocks = re.split(r'(?=GIVEN:)', block)
+                    for given_block in given_blocks:
+                        given_block = given_block.strip()
+                        if not given_block.startswith('GIVEN:'):
+                            continue
+                        
+                        when_match = re.search(r'WHEN:\s*(.*)', given_block, re.DOTALL)
+                        scenario_name = when_match.group(1).strip().split('\n')[0] if when_match else "N/A"
+                        
+                        processed_rows.append({
+                            'Function ID': original_id,
+                            'Scenario Name': scenario_name.strip(),
+                            'Description': given_block,
+                            **other_cols
+                        })
+                    continue # Skip to the next scenario block
+
+                # --- Default processing for normal scenarios ---
+                name_match = re.search(r'Scenario:\s*(.*)', block, re.DOTALL)
+                scenario_name = name_match.group(1).strip().split('\n')[0] if name_match else "N/A"
+
+                description = re.sub(r'(\d+\.\s*)?Scenario:.*?\n', '', block, count=1).strip()
+
+                processed_rows.append({
+                    'Function ID': original_id,
+                    'Scenario Name': scenario_name.strip(),
+                    'Description': description,
+                    **other_cols
+                })
+
+        if not processed_rows:
+            print("No data was processed. The output file will not be created.")
+            return
+
+        parsed_df = pd.DataFrame(processed_rows)
+        output_file_path = f"{file_name}_updated{file_ext}"
+        parsed_df.to_excel(output_file_path, index=False)
+        print(f"🎉 Successfully created a new file 🎉 \n {output_file_path}")
+
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+     
+def KeywordParseExcel(file_path: str, keyword: str, column_name: str):
     """
     Parses an Excel file to create new rows based on a keyword within a specified column.
 
